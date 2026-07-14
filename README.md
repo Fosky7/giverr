@@ -1,6 +1,6 @@
 # Giverr
 
-A nonprofit bringing food, shelter, and hope to those in need.
+A beautiful  charity fundraising platform for individuals and NGOs
 
 ## Getting Started
 
