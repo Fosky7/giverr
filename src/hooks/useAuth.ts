@@ -1,229 +1,228 @@
 // src/hooks/useAuth.ts
-import { useCallback, useMemo } from "react";
-import type { Provider } from "@supabase/supabase-js";
+//
+// The single source of truth for authentication logic. Exposes a typed API for
+// email + Google auth, password reset/update, and reactive session/user state
+// that the rest of the app (AuthForm, ForgotPassword, ResetPassword, Header,
+// ProtectedRoute, Dashboard) consumes.
+//
+// Design notes:
+//   * We use a module-level singleton store so every component sharing this
+//     hook observes the same session state without needing a wrapping
+//     <AuthProvider>. (An AuthContext could layer on top, but this keeps the
+//     hook self-contained and avoids "used outside provider" runtime errors.)
+//   * signInWithGoogle redirects to `${origin}/auth/callback?redirect=...`,
+//     which is finalized by src/pages/AuthCallback.tsx.
+//   * signUpWithEmail sets emailRedirectTo so confirmation links land back in
+//     the app; it returns { session } so callers can distinguish
+//     confirmation-required (no session) from instant signup (session).
+
+import { useEffect, useState } from "react";
+import type { AuthError, Session, User } from "@supabase/supabase-js";
 
 import { supabase } from "@/integrations/supabase/client";
-import { useAuthContext, type AuthContextValue } from "@/context/AuthContext";
-import type { Profile } from "@/types/profile";
 
-/** OAuth providers currently supported by the app. */
-export type OAuthProvider = Extract<Provider, "google" | "facebook">;
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-/** Uniform result envelope so callers can render inline alerts consistently. */
-export interface AuthActionResult {
-  /** A user-friendly error message, or null on success. */
+export interface SignUpParams {
+  email: string;
+  password: string;
+  fullName: string;
+}
+
+export interface SignInParams {
+  email: string;
+  password: string;
+}
+
+export interface SignUpResult {
+  session: Session | null;
+  user: User | null;
+  error: AuthError | null;
+}
+
+export interface AuthResult {
+  error: AuthError | null;
+}
+
+/** String-error shaped results for flows the UI reads as `{ error: string }`. */
+export interface StringErrorResult {
   error: string | null;
 }
 
-/** Result of a sign-up, which may or may not produce an immediate session. */
-export interface SignUpResult extends AuthActionResult {
-  /**
-   * True when Supabase returned no session (email confirmation is required).
-   * Callers can use this to show a "check your inbox" message.
-   */
-  needsEmailConfirmation: boolean;
+export interface UseAuthValue {
+  session: Session | null;
+  user: User | null;
+  loading: boolean;
+  signUpWithEmail: (params: SignUpParams) => Promise<SignUpResult>;
+  signInWithEmail: (params: SignInParams) => Promise<AuthResult>;
+  signInWithGoogle: (redirectTo?: string) => Promise<AuthResult>;
+  sendPasswordReset: (email: string) => Promise<StringErrorResult>;
+  updatePassword: (newPassword: string) => Promise<StringErrorResult>;
+  signOut: () => Promise<void>;
 }
 
-export interface UseAuthValue extends AuthContextValue {
-  signInWithPassword: (
-    email: string,
-    password: string
-  ) => Promise<AuthActionResult>;
-  signUpWithPassword: (
-    email: string,
-    password: string,
-    metadata?: Record<string, unknown>
-  ) => Promise<SignUpResult>;
-  signInWithOAuth: (provider: OAuthProvider) => Promise<AuthActionResult>;
-  signOut: () => Promise<AuthActionResult>;
-  sendPasswordReset: (email: string) => Promise<AuthActionResult>;
-  updatePassword: (newPassword: string) => Promise<AuthActionResult>;
-  refreshProfile: () => Promise<Profile | null>;
+// ---------------------------------------------------------------------------
+// Shared reactive store (module singleton)
+// ---------------------------------------------------------------------------
+
+interface AuthState {
+  session: Session | null;
+  user: User | null;
+  loading: boolean;
 }
 
-/**
- * Normalize any thrown value / Supabase error into a readable string. Keeps
- * every action's error handling consistent and avoids leaking `[object Object]`.
- */
-function normalizeError(err: unknown, fallback: string): string {
-  if (!err) return fallback;
-  if (typeof err === "string") return err;
-  if (err instanceof Error && err.message) return err.message;
-  if (
-    typeof err === "object" &&
-    "message" in err &&
-    typeof (err as { message: unknown }).message === "string"
-  ) {
-    return (err as { message: string }).message;
+let state: AuthState = { session: null, user: null, loading: true };
+const listeners = new Set<(s: AuthState) => void>();
+let initialized = false;
+
+function setState(next: Partial<AuthState>) {
+  state = { ...state, ...next };
+  listeners.forEach((listener) => listener(state));
+}
+
+/** Boot the Supabase auth listener exactly once for the whole app. */
+function ensureInitialized() {
+  if (initialized) return;
+  initialized = true;
+
+  supabase.auth
+    .getSession()
+    .then(({ data }) => {
+      setState({
+        session: data.session,
+        user: data.session?.user ?? null,
+        loading: false,
+      });
+    })
+    .catch(() => {
+      setState({ loading: false });
+    });
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    setState({
+      session,
+      user: session?.user ?? null,
+      loading: false,
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function appOrigin(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
   }
-  return fallback;
+  return "";
 }
 
-/**
- * Central authentication hook. Reads shared state from {@link useAuthContext}
- * and layers action methods that wrap the Supabase client. Every action returns
- * a `{ error }` envelope (never throws) so UI can render inline feedback.
- */
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
 export function useAuth(): UseAuthValue {
-  const { user, session, profile, loading, refreshProfile } = useAuthContext();
+  ensureInitialized();
 
-  const signInWithPassword = useCallback(
-    async (email: string, password: string): Promise<AuthActionResult> => {
-      try {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        return { error: error ? error.message : null };
-      } catch (err) {
-        return {
-          error: normalizeError(err, "Unable to sign in. Please try again."),
-        };
-      }
-    },
-    []
-  );
+  const [local, setLocal] = useState<AuthState>(state);
 
-  const signUpWithPassword = useCallback(
-    async (
-      email: string,
-      password: string,
-      metadata?: Record<string, unknown>
-    ): Promise<SignUpResult> => {
-      try {
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/`,
-            data: metadata,
-          },
-        });
-
-        if (error) {
-          return { error: error.message, needsEmailConfirmation: false };
-        }
-
-        return {
-          error: null,
-          // No session means Supabase requires email confirmation.
-          needsEmailConfirmation: !data.session,
-        };
-      } catch (err) {
-        return {
-          error: normalizeError(
-            err,
-            "Unable to create your account. Please try again."
-          ),
-          needsEmailConfirmation: false,
-        };
-      }
-    },
-    []
-  );
-
-  const signInWithOAuth = useCallback(
-    async (provider: OAuthProvider): Promise<AuthActionResult> => {
-      try {
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider,
-          options: {
-            redirectTo: `${window.location.origin}/dashboard`,
-          },
-        });
-        return { error: error ? error.message : null };
-      } catch (err) {
-        return {
-          error: normalizeError(
-            err,
-            `Unable to continue with ${provider}. Please try again.`
-          ),
-        };
-      }
-    },
-    []
-  );
-
-  const signOut = useCallback(async (): Promise<AuthActionResult> => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      return { error: error ? error.message : null };
-    } catch (err) {
-      return {
-        error: normalizeError(err, "Unable to sign out. Please try again."),
-      };
-    }
+  useEffect(() => {
+    const listener = (s: AuthState) => setLocal(s);
+    listeners.add(listener);
+    // Sync immediately in case state changed between render and effect.
+    setLocal(state);
+    return () => {
+      listeners.delete(listener);
+    };
   }, []);
 
-  const sendPasswordReset = useCallback(
-    async (email: string): Promise<AuthActionResult> => {
-      try {
-        const { error } = await supabase.auth.resetPasswordForEmail(
-          email.trim(),
-          {
-            redirectTo: `${window.location.origin}/reset-password`,
-          }
-        );
-        return { error: error ? error.message : null };
-      } catch (err) {
-        return {
-          error: normalizeError(
-            err,
-            "Unable to send the reset email. Please try again."
-          ),
-        };
-      }
-    },
-    []
-  );
+  const signUpWithEmail = async ({
+    email,
+    password,
+    fullName,
+  }: SignUpParams): Promise<SignUpResult> => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        // Confirmation link lands back in the app.
+        emailRedirectTo: `${appOrigin()}/auth/callback`,
+        data: { full_name: fullName },
+      },
+    });
 
-  const updatePassword = useCallback(
-    async (newPassword: string): Promise<AuthActionResult> => {
-      try {
-        const { error } = await supabase.auth.updateUser({
-          password: newPassword,
-        });
-        return { error: error ? error.message : null };
-      } catch (err) {
-        return {
-          error: normalizeError(
-            err,
-            "Unable to update your password. Please try again."
-          ),
-        };
-      }
-    },
-    []
-  );
+    return {
+      session: data?.session ?? null,
+      user: data?.user ?? null,
+      error,
+    };
+  };
 
-  return useMemo<UseAuthValue>(
-    () => ({
-      user,
-      session,
-      profile,
-      loading,
-      refreshProfile,
-      signInWithPassword,
-      signUpWithPassword,
-      signInWithOAuth,
-      signOut,
-      sendPasswordReset,
-      updatePassword,
-    }),
-    [
-      user,
-      session,
-      profile,
-      loading,
-      refreshProfile,
-      signInWithPassword,
-      signUpWithPassword,
-      signInWithOAuth,
-      signOut,
-      sendPasswordReset,
-      updatePassword,
-    ]
-  );
+  const signInWithEmail = async ({
+    email,
+    password,
+  }: SignInParams): Promise<AuthResult> => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    return { error };
+  };
+
+  const signInWithGoogle = async (
+    redirectTo = "/dashboard"
+  ): Promise<AuthResult> => {
+    const callbackUrl = `${appOrigin()}/auth/callback?redirect=${encodeURIComponent(
+      redirectTo
+    )}`;
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: callbackUrl,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+      },
+    });
+    return { error };
+  };
+
+  const sendPasswordReset = async (
+    email: string
+  ): Promise<StringErrorResult> => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${appOrigin()}/reset-password`,
+    });
+    return { error: error ? error.message : null };
+  };
+
+  const updatePassword = async (
+    newPassword: string
+  ): Promise<StringErrorResult> => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    return { error: error ? error.message : null };
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  return {
+    session: local.session,
+    user: local.user,
+    loading: local.loading,
+    signUpWithEmail,
+    signInWithEmail,
+    signInWithGoogle,
+    sendPasswordReset,
+    updatePassword,
+    signOut,
+  };
 }
 
 export default useAuth;
