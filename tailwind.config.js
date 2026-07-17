@@ -9,7 +9,8 @@ module.exports = {
   content: [
     "./index.html",
     "./src/**/*.{ts,tsx,js,jsx}",
-  ],
+  
+  "./*.{ts,tsx,js,jsx,html}"],
   theme: {
     // Centered container with responsive padding for consistent page gutters.
     container: {
