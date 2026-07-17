@@ -1,17 +1,15 @@
 import React from "react";
-import { createRoot } from "react-dom/client";
-
+import ReactDOM from "react-dom/client";
 import App from "./App";
-import "./index.css";
 
-const rootElement = document.getElementById("root");
+const container = document.getElementById("root");
 
-if (!rootElement) {
-  throw new Error('Unable to mount React application: missing root element with id "root".');
+if (!container) {
+  throw new Error("Root container #root not found in index.html");
 }
 
-createRoot(rootElement).render(
+ReactDOM.createRoot(container).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>,
+  </React.StrictMode>
 );

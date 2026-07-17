@@ -3,7 +3,7 @@
 
 import * as React from "react";
 
-function Pages(props: React.ComponentProps<"div">) {
-  return <div data-kross-stub="Pages" style={{ display: "none" }} {...props} />;
+function SignupPage(props: React.ComponentProps<"div">) {
+  return <div data-kross-stub="SignupPage" style={{ display: "none" }} {...props} />;
 }
-export default Pages;
+export default SignupPage;
