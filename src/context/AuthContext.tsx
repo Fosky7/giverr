@@ -1,64 +1,82 @@
 // src/context/AuthContext.tsx
+//
+// The single source of truth for authentication state and actions across the
+// app. Wraps Supabase Auth and exposes a normalized API where every mutating
+// method resolves to `{ error: string | null }` (plus `data` where relevant),
+// so consuming components never touch raw Supabase error shapes.
+//
+// State:
+//   - user     : the current Supabase User (or null)
+//   - session  : the current Session (or null)
+//   - loading  : true until the initial getSession() resolves
+//
+// On mount we call getSession() once, then subscribe to onAuthStateChange to
+// keep user/session in sync across tabs and through the full auth lifecycle
+// (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, PASSWORD_RECOVERY, USER_UPDATED).
+
 import {
   createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 
 import { supabase } from "@/integrations/supabase/client";
-import { mapProfileRow, type Profile, type ProfileRow } from "@/types/profile";
+import { mapAuthError } from "@/lib/authErrors";
 
-/**
- * Shape of the value exposed by {@link AuthContext}. This is the single source
- * of truth for auth state across the app — Header, Dashboard, ProfileForm, and
- * the `useAuth` hook all read from here.
- */
-export interface AuthContextValue {
-  /** The authenticated Supabase user, or null when signed out. */
-  user: User | null;
-  /** The active session, or null when signed out. */
-  session: Session | null;
-  /** The current user's profile row (null while loading or when absent). */
-  profile: Profile | null;
-  /**
-   * True during the initial session bootstrap. Consumers should render a
-   * loading state (or defer redirects) until this flips to false.
-   */
-  loading: boolean;
-  /**
-   * Re-fetch the current user's profile row. Exposed so mutations (e.g. the
-   * profile settings form) can refresh the shared profile after saving.
-   */
-  refreshProfile: () => Promise<Profile | null>;
+/** Normalized result returned by every auth mutation. */
+export interface AuthResult<TData = unknown> {
+  error: string | null;
+  data?: TData;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+/** Public shape of the auth context consumed via `useAuth`. */
+export interface AuthContextValue {
+  /** Current authenticated user, or null when signed out. */
+  user: User | null;
+  /** Current Supabase session, or null when signed out. */
+  session: Session | null;
+  /** True until the initial session lookup completes. */
+  loading: boolean;
+  /** Convenience flag derived from `user`. */
+  isAuthenticated: boolean;
 
-/**
- * Fetch a single profile row for the given user id and normalize it. Returns
- * null when no row exists yet (e.g. the auto-provision trigger hasn't run) or
- * on any read error — callers treat a missing profile as "not loaded".
- */
-async function fetchProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select(
-      "id, full_name, email, avatar_url, bio, notification_preferences, created_at, updated_at"
-    )
-    .eq("id", userId)
-    .maybeSingle();
+  /** Register a new account with email + password. */
+  signUpWithEmail: (
+    email: string,
+    password: string,
+    fullName?: string
+  ) => Promise<AuthResult<{ needsEmailConfirmation: boolean }>>;
 
-  if (error || !data) {
-    return null;
+  /** Sign in an existing user with email + password. */
+  signInWithEmail: (email: string, password: string) => Promise<AuthResult>;
+
+  /** Begin the Google OAuth redirect flow. */
+  signInWithGoogle: (redirectTo?: string) => Promise<AuthResult>;
+
+  /** Send a password-reset email. */
+  sendPasswordReset: (email: string) => Promise<AuthResult>;
+
+  /** Update the current user's password (during recovery or when signed in). */
+  updatePassword: (password: string) => Promise<AuthResult>;
+
+  /** Sign the current user out. */
+  signOut: () => Promise<AuthResult>;
+}
+
+export const AuthContext = createContext<AuthContextValue | undefined>(
+  undefined
+);
+
+/** Safely read the browser origin (guards SSR / non-browser environments). */
+function getOrigin(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
   }
-
-  return mapProfileRow(data as ProfileRow);
+  return "";
 }
 
 interface AuthProviderProps {
@@ -66,102 +84,210 @@ interface AuthProviderProps {
 }
 
 /**
- * Provider that bootstraps the Supabase session, subscribes to auth state
- * changes, and keeps the current user's profile row in sync. Wrap the app tree
- * with this so every consumer shares one auth state instance.
+ * Provider that owns Supabase auth state and exposes the normalized API.
+ * Mount this near the root of the app (above the router) so every route and
+ * hook can read a consistent auth surface.
  */
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // Track the latest user id so async profile fetches can be ignored if the
-  // user changed while a request was in flight (avoids stale state writes).
-  const activeUserIdRef = useRef<string | null>(null);
-
-  /**
-   * Load (or clear) the profile for a given user id, guarding against races
-   * where the auth state changes again before the fetch resolves.
-   */
-  const loadProfile = useCallback(async (userId: string | null) => {
-    activeUserIdRef.current = userId;
-
-    if (!userId) {
-      setProfile(null);
-      return;
-    }
-
-    const next = await fetchProfile(userId);
-    // Ignore results for a user that is no longer active.
-    if (activeUserIdRef.current === userId) {
-      setProfile(next);
-    }
-  }, []);
-
-  /** Public helper to re-fetch the active user's profile on demand. */
-  const refreshProfile = useCallback(async (): Promise<Profile | null> => {
-    const userId = activeUserIdRef.current;
-    if (!userId) {
-      setProfile(null);
-      return null;
-    }
-    const next = await fetchProfile(userId);
-    if (activeUserIdRef.current === userId) {
-      setProfile(next);
-    }
-    return next;
-  }, []);
 
   useEffect(() => {
     let mounted = true;
 
-    // 1) Bootstrap the initial session synchronously-ish on mount.
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      const initialSession = data.session ?? null;
-      setSession(initialSession);
-      setUser(initialSession?.user ?? null);
-      void loadProfile(initialSession?.user?.id ?? null).finally(() => {
-        if (mounted) setLoading(false);
-      });
-    });
-
-    // 2) Subscribe to subsequent auth state changes (login, logout, refresh).
+    // 1. Subscribe FIRST so we never miss an event that fires between the
+    //    getSession() call and the listener attaching (e.g. OAuth redirects
+    //    or magic-link consumption on load).
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!mounted) return;
+      // All handled events (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED,
+      // PASSWORD_RECOVERY, USER_UPDATED) simply carry the latest session —
+      // syncing both pieces of state keeps the app consistent.
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
-      void loadProfile(nextSession?.user?.id ?? null);
+      setLoading(false);
     });
+
+    // 2. Resolve the current session on mount.
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setSession(data.session);
+        setUser(data.session?.user ?? null);
+      })
+      .catch(() => {
+        // Swallow — a failed initial lookup just means "not signed in yet".
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [loadProfile]);
+  }, []);
+
+  const signUpWithEmail = useCallback<AuthContextValue["signUpWithEmail"]>(
+    async (email, password, fullName) => {
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            // Where the confirmation link lands the user after verifying.
+            emailRedirectTo: `${getOrigin()}/dashboard`,
+            data: fullName?.trim()
+              ? { full_name: fullName.trim() }
+              : undefined,
+          },
+        });
+
+        if (error) {
+          return { error: mapAuthError(error) };
+        }
+
+        // When email confirmation is enabled, Supabase returns a user with an
+        // empty `identities` array and no active session. Surface that so the
+        // UI can show a "check your inbox" message instead of assuming login.
+        const needsEmailConfirmation =
+          !data.session &&
+          (!data.user?.identities || data.user.identities.length === 0
+            ? true
+            : !data.user?.confirmed_at && !data.user?.email_confirmed_at);
+
+        return {
+          error: null,
+          data: { needsEmailConfirmation: Boolean(needsEmailConfirmation) },
+        };
+      } catch (err) {
+        return { error: mapAuthError(err) };
+      }
+    },
+    []
+  );
+
+  const signInWithEmail = useCallback<AuthContextValue["signInWithEmail"]>(
+    async (email, password) => {
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (error) return { error: mapAuthError(error) };
+        return { error: null };
+      } catch (err) {
+        return { error: mapAuthError(err) };
+      }
+    },
+    []
+  );
+
+  const signInWithGoogle = useCallback<AuthContextValue["signInWithGoogle"]>(
+    async (redirectTo) => {
+      try {
+        // Route the OAuth response back through our dedicated callback route,
+        // which finalizes the session and forwards to the intended page. We
+        // encode any post-login destination as a query param the callback reads.
+        const callbackBase = `${getOrigin()}/auth/callback`;
+        const callbackUrl = redirectTo
+          ? `${callbackBase}?next=${encodeURIComponent(redirectTo)}`
+          : callbackBase;
+
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: callbackUrl,
+            queryParams: {
+              // Ask Google to always return a refresh token + let the user pick
+              // an account, which avoids silent "stuck" states.
+              access_type: "offline",
+              prompt: "select_account",
+            },
+          },
+        });
+
+        if (error) return { error: mapAuthError(error) };
+        // On success the browser is redirected away; this resolves is mostly for
+        // the (rare) case where the redirect is deferred.
+        return { error: null };
+      } catch (err) {
+        return { error: mapAuthError(err) };
+      }
+    },
+    []
+  );
+
+  const sendPasswordReset = useCallback<AuthContextValue["sendPasswordReset"]>(
+    async (email) => {
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(
+          email.trim(),
+          { redirectTo: `${getOrigin()}/reset-password` }
+        );
+        if (error) return { error: mapAuthError(error) };
+        return { error: null };
+      } catch (err) {
+        return { error: mapAuthError(err) };
+      }
+    },
+    []
+  );
+
+  const updatePassword = useCallback<AuthContextValue["updatePassword"]>(
+    async (password) => {
+      try {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) return { error: mapAuthError(error) };
+        return { error: null };
+      } catch (err) {
+        return { error: mapAuthError(err) };
+      }
+    },
+    []
+  );
+
+  const signOut = useCallback<AuthContextValue["signOut"]>(async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) return { error: mapAuthError(error) };
+      return { error: null };
+    } catch (err) {
+      return { error: mapAuthError(err) };
+    }
+  }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, session, profile, loading, refreshProfile }),
-    [user, session, profile, loading, refreshProfile]
+    () => ({
+      user,
+      session,
+      loading,
+      isAuthenticated: Boolean(user),
+      signUpWithEmail,
+      signInWithEmail,
+      signInWithGoogle,
+      sendPasswordReset,
+      updatePassword,
+      signOut,
+    }),
+    [
+      user,
+      session,
+      loading,
+      signUpWithEmail,
+      signInWithEmail,
+      signInWithGoogle,
+      sendPasswordReset,
+      updatePassword,
+      signOut,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-/**
- * Internal accessor for the raw auth context. Prefer the `useAuth` hook (which
- * layers actions on top) in application code. Throws if used outside a
- * {@link AuthProvider}.
- */
-export function useAuthContext(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (ctx === undefined) {
-    throw new Error("useAuthContext must be used within an <AuthProvider>");
-  }
-  return ctx;
-}
-
-export { AuthContext };
+export default AuthProvider;
