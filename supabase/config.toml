@@ -1,0 +1,107 @@
+# Supabase project configuration for Rayze.
+#
+# This file is consumed by the Supabase CLI (`supabase start` / `supabase
+# link` / `supabase db push`). It documents and drives the local Auth
+# configuration so the Google + Facebook social logins and the password
+# recovery / post-login redirects used by Module 3 are set up consistently.
+#
+# IMPORTANT — SECRETS ARE NEVER STORED HERE.
+# OAuth client IDs/secrets are referenced via environment variables using the
+# `env(NAME)` helper. For a hosted Supabase project you configure the real
+# values in the Dashboard (Authentication -> Providers). For local dev you set
+# them in `supabase/.env` (git-ignored). Nothing sensitive is committed.
+
+project_id = "rayze"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+[auth]
+enabled = true
+
+# The base URL of the site. Used as the default post-auth redirect target and
+# to build links in confirmation / recovery emails. Override per-environment
+# via the SITE_URL env var (falls back to local dev).
+site_url = "env(SITE_URL)"
+
+# Allow-listed redirect targets. Supabase will only redirect back to URLs that
+# match one of these patterns. We include the recovery route
+# (`/reset-password`) and the post-login route (`/dashboard`) for every
+# environment. Wildcards let the same config work for local, preview and prod.
+additional_redirect_urls = [
+  "http://localhost:5173",
+  "http://localhost:5173/dashboard",
+  "http://localhost:5173/reset-password",
+  "http://localhost:3000",
+  "http://localhost:3000/dashboard",
+  "http://localhost:3000/reset-password",
+  "https://*.vercel.app/dashboard",
+  "https://*.vercel.app/reset-password",
+]
+
+# JWT lifetime (1 hour) and refresh-token rotation for session security.
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+# Allow new signups. Email confirmations can be toggled below.
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+# Require users to confirm their email before a session is issued. The signup
+# flow (AuthForm) already handles the "check your inbox" state for this case.
+enable_confirmations = true
+# Minimum password length is also validated client-side (zod) in AuthForm.
+secure_password_change = true
+
+# ---------------------------------------------------------------------------
+# Social providers
+#
+# Credentials are injected from the environment — NEVER hard-coded here or in
+# client code. On hosted Supabase, set these in the Dashboard instead; this
+# block primarily configures the local dev stack.
+# ---------------------------------------------------------------------------
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+# Supabase handles the provider callback; users are then returned to one of
+# the allow-listed `additional_redirect_urls` (e.g. /dashboard).
+redirect_uri = ""
+skip_nonce_check = false
+
+[auth.external.facebook]
+enabled = true
+client_id = "env(SUPABASE_AUTH_FACEBOOK_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_FACEBOOK_SECRET)"
+redirect_uri = ""
+
+# ---------------------------------------------------------------------------
+# Storage (avatars bucket is created via migration 0005_avatars_bucket.sql)
+# ---------------------------------------------------------------------------
+[storage]
+enabled = true
+# 5 MiB cap aligns with the client-side avatar size validation.
+file_size_limit = "5MiB"
+
+[inbucket]
+# Local-only email testing UI (confirmation + recovery emails).
+enabled = true
+port = 54324

@@ -1,6 +1,6 @@
-# Giverr
+# Rayze
 
-A beautiful  charity fundraising platform for individuals and NGOs
+A fundraising platform which allows individuals and NGOs create campaigns and raise funds from the public efficiently and excellently.
 
 ## Getting Started
 

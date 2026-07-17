@@ -1,0 +1,169 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Rayze Design System — global tokens & base styles.
+ * All colors are expressed as HSL triplets (no leading `hsl()`), so they can be
+ * consumed by Tailwind via `hsl(var(--token))` and support light/dark theming.
+ */
+
+@layer base {
+  :root {
+    /* ---- Surfaces & text ---- */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    /* ---- Rayze brand: vibrant indigo/violet primary ---- */
+    --primary: 258 90% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    /* ---- Accent: warm coral to balance the cool primary ---- */
+    --accent: 12 92% 62%;
+    --accent-foreground: 0 0% 100%;
+
+    /* ---- Semantic status colors ---- */
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 26 83% 14%;
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* ---- Borders, inputs, focus ring ---- */
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 258 90% 60%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    /* ---- Surfaces & text ---- */
+    --background: 222.2 47% 6%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 40% 9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 40% 9%;
+    --popover-foreground: 210 40% 98%;
+
+    /* ---- Brand primary (slightly brighter on dark) ---- */
+    --primary: 258 92% 68%;
+    --primary-foreground: 222.2 47% 6%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    /* ---- Accent ---- */
+    --accent: 12 90% 66%;
+    --accent-foreground: 222.2 47% 6%;
+
+    /* ---- Semantic status colors ---- */
+    --success: 142 65% 52%;
+    --success-foreground: 222.2 47% 6%;
+    --warning: 38 92% 58%;
+    --warning-foreground: 26 83% 10%;
+    --info: 199 89% 58%;
+    --info-foreground: 222.2 47% 6%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* ---- Borders, inputs, focus ring ---- */
+    --border: 217.2 32.6% 20%;
+    --input: 217.2 32.6% 20%;
+    --ring: 258 92% 68%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    /* Font families referenced by tailwind.config (font-sans / font-heading) */
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+      Arial, sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Poppins", "Inter", system-ui, sans-serif;
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  /*
+   * .glass — frosted, glossy surface used for cards, nav bars and overlays.
+   * Falls back gracefully where backdrop-filter is unsupported.
+   */
+  .glass {
+    @apply border border-white/10 bg-background/60 shadow-lg;
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+  }
+
+  /*
+   * .gradient-text — brand gradient applied to text (primary -> accent).
+   */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      90deg,
+      hsl(var(--primary)),
+      hsl(var(--accent))
+    );
+  }
+
+  /*
+   * .gradient-brand — brand gradient background for hero sections / CTAs.
+   */
+  .gradient-brand {
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--primary)),
+      hsl(var(--accent))
+    );
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbars while keeping scroll behavior (used in horizontal rails). */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
