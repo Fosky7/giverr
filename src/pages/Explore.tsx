@@ -1,142 +1,120 @@
-import { useState } from "react";
-import { AlertCircle, RefreshCw, Search, SearchX } from "lucide-react";
+// src/pages/Explore.tsx
+//
+// Public campaign discovery page (route "/explore"). Fetches published
+// campaigns from Supabase and renders them with the shared CampaignCard.
+// Handles loading, empty, and error states so the build has no placeholder /
+// mock data paths.
+//
+// Default export so App.tsx can import (or lazy-load) it directly.
 
-import { PageHeader } from "@/components/layout/PageHeader";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
-import { CATEGORY_FILTERS, type CategoryFilter } from "@/types/campaign";
-import { useCampaigns } from "@/hooks/useCampaigns";
-import { CampaignCard } from "@/components/campaigns/CampaignCard";
-import { CampaignCardSkeleton } from "@/components/campaigns/CampaignCardSkeleton";
+import { useEffect, useState } from "react";
+import { Loader2, SearchX } from "lucide-react";
 
-// Number of skeleton cards to render while the initial fetch is in flight.
-const SKELETON_COUNT = 6;
+import { supabase } from "@/integrations/supabase/client";
+import { CampaignCard } from "@/components/CampaignCard";
 
-/**
- * Explore page. Renders a search/filter bar wired to the shared
- * {@link useCampaigns} hook (query + activeCategory feed the hook, which does
- * server-side filtering with a client fallback) and a responsive grid of
- * {@link CampaignCard}s.
- *
- * States handled:
- *  - loading  → grid of CampaignCardSkeletons
- *  - error    → inline AlertCircle panel with a retry button
- *  - empty    → "No campaigns found" with a Clear filters action
- *  - success  → the campaign grid
- */
-export function Explore() {
-  const [query, setQuery] = useState("");
-  const [activeCategory, setActiveCategory] = useState<CategoryFilter>("All");
-
-  const { campaigns, loading, error, refetch } = useCampaigns({
-    query,
-    category: activeCategory,
-  });
-
-  const clearFilters = () => {
-    setQuery("");
-    setActiveCategory("All");
-  };
-
-  const hasActiveFilters = query.trim().length > 0 || activeCategory !== "All";
-
-  return (
-    <>
-      <PageHeader
-        title="Explore Campaigns"
-        description="Discover causes and projects from creators and organizations around the world. Find something worth backing."
-      />
-
-      <section className="container mx-auto px-4 py-12">
-        {/* Search + filters */}
-        <div className="space-y-4">
-          <div className="relative mx-auto max-w-xl">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search campaigns..."
-              className="pl-9"
-              aria-label="Search campaigns"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {CATEGORY_FILTERS.map((category) => (
-              <Button
-                key={category}
-                type="button"
-                size="sm"
-                variant={activeCategory === category ? "default" : "outline"}
-                onClick={() => setActiveCategory(category)}
-                className={cn(
-                  "rounded-full",
-                  activeCategory === category && "shadow-sm"
-                )}
-              >
-                {category}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        {/* Results */}
-        {loading ? (
-          <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: SKELETON_COUNT }).map((_, index) => (
-              <CampaignCardSkeleton key={index} />
-            ))}
-          </div>
-        ) : error ? (
-          <div
-            role="alert"
-            className="mx-auto mt-16 flex max-w-md flex-col items-center text-center"
-          >
-            <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
-              <AlertCircle className="h-8 w-8" />
-            </span>
-            <h2 className="mt-6 text-xl font-semibold text-foreground">
-              Couldn&apos;t load campaigns
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {error} Please check your connection and try again.
-            </p>
-            <Button variant="outline" className="mt-6" onClick={refetch}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Retry
-            </Button>
-          </div>
-        ) : campaigns.length > 0 ? (
-          <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {campaigns.map((campaign) => (
-              <CampaignCard key={campaign.id} campaign={campaign} />
-            ))}
-          </div>
-        ) : (
-          <div className="mx-auto mt-16 flex max-w-md flex-col items-center text-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground">
-              <SearchX className="h-8 w-8" />
-            </span>
-            <h2 className="mt-6 text-xl font-semibold text-foreground">
-              No campaigns found
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {hasActiveFilters
-                ? "We couldn't find any campaigns matching your search. Try a different keyword or category."
-                : "There are no campaigns yet. Be the first to launch one!"}
-            </p>
-            {hasActiveFilters ? (
-              <Button variant="outline" className="mt-6" onClick={clearFilters}>
-                Clear filters
-              </Button>
-            ) : null}
-          </div>
-        )}
-      </section>
-    </>
-  );
+// Minimal row shape used for rendering. Kept local so this page does not depend
+// on a generated type that may not exist yet, while still being fully typed.
+interface CampaignRow {
+  id: string;
+  title: string | null;
+  description: string | null;
+  goal_amount: number | null;
+  current_amount: number | null;
+  cover_image_url: string | null;
+  deadline: string | null;
 }
 
-export default Explore;
+type LoadState = "loading" | "ready" | "error";
+
+/**
+ * Lists published campaigns pulled live from Supabase.
+ */
+export default function Explore() {
+  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
+  const [state, setState] = useState<LoadState>("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setState("loading");
+
+      const { data, error } = await supabase
+        .from("campaigns")
+        .select(
+          "id, title, description, goal_amount, current_amount, cover_image_url, deadline",
+        )
+        .order("created_at", { ascending: false });
+
+      if (cancelled) return;
+
+      if (error) {
+        setState("error");
+        return;
+      }
+
+      setCampaigns((data ?? []) as CampaignRow[]);
+      setState("ready");
+    }
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-12">
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
+          Explore campaigns
+        </h1>
+        <p className="mt-2 text-muted-foreground">
+          Discover projects and back the ones you believe in.
+        </p>
+      </header>
+
+      {state === "loading" && (
+        <div className="flex items-center justify-center py-24 text-muted-foreground">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          Loading campaigns…
+        </div>
+      )}
+
+      {state === "error" && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center text-destructive">
+          Something went wrong loading campaigns. Please try again shortly.
+        </div>
+      )}
+
+      {state === "ready" && campaigns.length === 0 && (
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-24 text-center text-muted-foreground">
+          <SearchX className="mb-3 h-8 w-8" />
+          <p className="text-lg font-medium text-foreground">
+            No campaigns yet
+          </p>
+          <p className="mt-1 text-sm">Be the first to launch one.</p>
+        </div>
+      )}
+
+      {state === "ready" && campaigns.length > 0 && (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {campaigns.map((campaign) => (
+            <CampaignCard
+              key={campaign.id}
+              id={campaign.id}
+              title={campaign.title ?? "Untitled campaign"}
+              description={campaign.description ?? ""}
+              goalAmount={campaign.goal_amount ?? 0}
+              currentAmount={campaign.current_amount ?? 0}
+              coverImageUrl={campaign.cover_image_url ?? undefined}
+              deadline={campaign.deadline ?? undefined}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
