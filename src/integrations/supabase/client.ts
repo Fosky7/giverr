@@ -2,8 +2,8 @@
 // Do not edit by hand; re-provision the backend from Settings to regenerate.
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = "https://kbpgiighshhcrxkuoeaq.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImticGdpaWdoc2hoY3J4a3VvZWFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMDIzODYsImV4cCI6MjA5OTU3ODM4Nn0.hgt7qqPKcDg6p7E6JtXi8oAGTdZ88KyGhOLG7gGyrHc";
+const SUPABASE_URL = "https://tdymwadprtussxlbveql.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkeW13YWRwcnR1c3N4bGJ2ZXFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNzI3NzgsImV4cCI6MjA5OTg0ODc3OH0.4DFz15d_Nz8MN7BoD4gExT3DhPKxYKwwVrU04Wd6A9I";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
