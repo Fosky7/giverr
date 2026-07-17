@@ -5,13 +5,21 @@
 // Handles loading, empty, and error states so the build has no placeholder /
 // mock data paths.
 //
+// Module update: the campaigns fetch now flows through `useRetryableAsync`, so a
+// transient network failure renders an in-place <RetryState> whose "Try again"
+// button re-runs the same select query (same ordering) without a full reload.
+// The dedicated empty state is preserved and only shown on a successful fetch
+// that returns zero rows.
+//
 // Default export so App.tsx can import (or lazy-load) it directly.
 
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import { Loader2, SearchX } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { CampaignCard } from "@/components/CampaignCard";
+import { RetryState } from "@/components/feedback/RetryState";
+import { useRetryableAsync } from "@/hooks/useRetryableAsync";
 
 // Minimal row shape used for rendering. Kept local so this page does not depend
 // on a generated type that may not exist yet, while still being fully typed.
@@ -25,71 +33,68 @@ interface CampaignRow {
   deadline: string | null;
 }
 
-type LoadState = "loading" | "ready" | "error";
-
 /**
  * Lists published campaigns pulled live from Supabase.
  */
 export default function Explore() {
-  const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
-  const [state, setState] = useState<LoadState>("loading");
+  // The fetch operation is stable across renders so the hook's guards behave.
+  const fetchCampaigns = useCallback(async (): Promise<CampaignRow[]> => {
+    const { data, error } = await supabase
+      .from("campaigns")
+      .select(
+        "id, title, description, goal_amount, current_amount, cover_image_url, deadline"
+      )
+      .order("created_at", { ascending: false });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setState("loading");
-
-      const { data, error } = await supabase
-        .from("campaigns")
-        .select(
-          "id, title, description, goal_amount, current_amount, cover_image_url, deadline",
-        )
-        .order("created_at", { ascending: false });
-
-      if (cancelled) return;
-
-      if (error) {
-        setState("error");
-        return;
-      }
-
-      setCampaigns((data ?? []) as CampaignRow[]);
-      setState("ready");
+    if (error) {
+      throw new Error(error.message);
     }
 
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
+    return (data ?? []) as CampaignRow[];
   }, []);
+
+  const { data, status, error, retry } = useRetryableAsync<CampaignRow[]>(
+    fetchCampaigns,
+    {
+      immediate: true,
+      fallbackError:
+        "We couldn't load campaigns right now. Please try again shortly.",
+    }
+  );
+
+  const campaigns = data ?? [];
+  const isLoading = status === "loading" || status === "idle";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
-      <header className="mb-8">
+      <section className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">
           Explore campaigns
         </h1>
         <p className="mt-2 text-muted-foreground">
           Discover projects and back the ones you believe in.
         </p>
-      </header>
+      </section>
 
-      {state === "loading" && (
+      {isLoading && (
         <div className="flex items-center justify-center py-24 text-muted-foreground">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           Loading campaigns…
         </div>
       )}
 
-      {state === "error" && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center text-destructive">
-          Something went wrong loading campaigns. Please try again shortly.
+      {status === "error" && (
+        <div className="py-12">
+          <RetryState
+            title="Couldn't load campaigns"
+            description={error}
+            onRetry={retry}
+            retrying={false}
+          />
         </div>
       )}
 
-      {state === "ready" && campaigns.length === 0 && (
+      {status === "ready" && campaigns.length === 0 && (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-24 text-center text-muted-foreground">
           <SearchX className="mb-3 h-8 w-8" />
           <p className="text-lg font-medium text-foreground">
@@ -99,7 +104,7 @@ export default function Explore() {
         </div>
       )}
 
-      {state === "ready" && campaigns.length > 0 && (
+      {status === "ready" && campaigns.length > 0 && (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {campaigns.map((campaign) => (
             <CampaignCard
