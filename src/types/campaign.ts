@@ -1,28 +1,141 @@
 // src/types/campaign.ts
-//
-// Shared campaign domain types + row->model normalization. Kept framework-free
-// so it can be imported by services, hooks, pages, and components alike. Type
-// exports are declared with `export type` / `export interface` so they remain
-// fully erasable at runtime (no bundle weight, clean `import type` resolution).
+
+// Catalog of campaign categories used in creation wizard and explore filters.
+export const CAMPAIGN_CATEGORIES = [
+  "Education",
+  "Health",
+  "Environment",
+  "Technology",
+  "Community",
+  "Arts",
+  "Sports",
+  "Emergency",
+  "Faith",
+  "Other",
+] as const;
+
+// Filters allow the user to pick any category or view all.
+export const CATEGORY_FILTERS = CAMPAIGN_CATEGORIES;
 
 /**
- * Lifecycle status of a campaign.
- *
- * - `draft`  — created but not yet published (hidden from Explore).
- * - `active` — published and visible to everyone.
- * - `paused` — temporarily hidden from Explore.
- * - `closed` — no longer accepting support.
- *
- * Values must stay in sync with the DB `campaigns.status` column and the
- * EDITABLE_STATUSES list in EditCampaignPage.tsx.
+ * Campaign statuses – maps to the database enum.
  */
 export type CampaignStatus = "draft" | "active" | "paused" | "closed";
 
 /**
- * A creator-authored update / blog post attached to a campaign. Rendered on the
- * public detail page by CampaignUpdates.tsx (which reads id, title, body,
- * createdAt) and created via PostUpdateDialog.tsx.
+ * Shape of a single campaign row as returned by the backend mapper.
+ * (Also used by createCampaign and updateCampaign service functions.)
  */
+export interface Campaign {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  targetAudience?: string;
+  longDescription?: string;
+  story?: string;
+  coverImageUrl?: string;
+  mediaUrls: string[];
+  goalAmount: number;
+  currency: string;
+  deadline: string;
+  donorWallEnabled: boolean;
+  raisedAmount: number;
+  backersCount: number;
+  status: CampaignStatus;
+  creatorId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Form values for the multi-step creation / edit wizard.
+ * Mirrors the fields of the campaigns table, plus secure bank details
+ * that are persisted via the dedicated bank-details edge function.
+ */
+export interface CampaignFormValues {
+  title: string;
+  description: string;
+  category: string;
+  targetAudience: string;
+  longDescription: string;
+  story: string;
+  coverImageUrl: string;
+  mediaUrls: string[];
+  goalAmount: number;
+  currency: string;
+  deadline: string;
+  donorWallEnabled: boolean;
+
+  // Bank details (only sent to the secure edge function, never stored in the client)
+  accountHolderName: string;
+  bankName: string;
+  accountNumber: string;
+  routingNumber?: string;
+  swiftBic?: string;
+  country: string;
+}
+
+/** Utility: derive progress percentage (0‑100), guard against 0 goal. */
+export function campaignProgress(campaign: Campaign): number {
+  if (!campaign.goalAmount || campaign.goalAmount <= 0) return 0;
+  return Math.min(
+    100,
+    Math.round((campaign.raisedAmount / campaign.goalAmount) * 100)
+  );
+}
+
+/** Maps a raw database row to the Campaign interface. */
+export function mapRowToCampaign(row: Record<string, unknown>): Campaign {
+  return {
+    id: String(row.id ?? ""),
+    title: String(row.title ?? ""),
+    description: String(row.description ?? ""),
+    category: String(row.category ?? ""),
+    targetAudience: row.targetAudience ? String(row.targetAudience) : undefined,
+    longDescription: row.longDescription ? String(row.longDescription) : undefined,
+    story: row.story ? String(row.story) : undefined,
+    coverImageUrl: row.coverImageUrl ? String(row.coverImageUrl) : undefined,
+    mediaUrls: Array.isArray(row.mediaUrls) ? (row.mediaUrls as string[]) : [],
+    goalAmount: Number(row.goalAmount ?? 0),
+    currency: String(row.currency ?? "USD"),
+    deadline: String(row.deadline ?? ""),
+    donorWallEnabled: Boolean(row.donorWallEnabled),
+    raisedAmount: Number(row.raisedAmount ?? 0),
+    backersCount: Number(row.backersCount ?? 0),
+    status: (row.status as CampaignStatus) ?? "draft",
+    creatorId: row.creatorId ? String(row.creatorId) : undefined,
+    created_at: row.created_at ? String(row.created_at) : undefined,
+    updated_at: row.updated_at ? String(row.updated_at) : undefined,
+  };
+}
+
+/**
+ * Raw database row shape for campaigns. Matches the columns selected by
+ * useCampaigns.ts and used by the mapper.
+ */
+export type CampaignRow = {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  raised: number;
+  goal: number;
+  backers: number;
+  creator_id: string;
+  created_at: string;
+};
+
+/**
+ * Category filter state – a union of the literal category strings plus 'All'.
+ */
+export type CategoryFilter = typeof CAMPAIGN_CATEGORIES[number] | "All";
+
+// ── Auto-generated by KrossBuild named-export gate ──
+// These bindings were imported elsewhere but missing here. Preserved blocks
+// are recovered verbatim from the prior version of this file (sticky export
+// invariant); unknown names are safe stubs. Replace stubs with real logic.
+// [sticky-export] CampaignUpdate — recovered from prior version
 export interface CampaignUpdate {
   id: string;
   campaignId: string;
@@ -31,175 +144,5 @@ export interface CampaignUpdate {
   body: string;
   createdAt: string;
 }
-
-/**
- * Raw row shape as returned by Supabase for the `campaigns` table. Snake-case
- * to match Postgres column names. Only the columns the app actually selects are
- * modeled; extended/optional columns are declared optional so partial selects
- * still type-check.
- */
-export interface CampaignRow {
-  id: string;
-  title: string;
-  category: string | null;
-  description: string | null;
-  raised: number | null;
-  goal: number | null;
-  backers: number | null;
-  creator_id: string | null;
-  created_at: string | null;
-
-  // Extended / optional columns (present on richer selects).
-  status?: CampaignStatus | null;
-  target_audience?: string | null;
-  long_description?: string | null;
-  story?: string | null;
-  cover_image_url?: string | null;
-  media_urls?: string[] | null;
-  currency?: string | null;
-  deadline?: string | null;
-  donor_wall_enabled?: boolean | null;
-  updated_at?: string | null;
-}
-
-/**
- * Normalized, camelCase campaign model used throughout the UI. `raised`, `goal`,
- * and `backers` are the canonical presentational fields consumed by
- * CampaignCard; the extended fields power the create/edit wizard.
- */
-export interface Campaign {
-  id: string;
-  title: string;
-  category: string;
-  description: string;
-  raised: number;
-  goal: number;
-  backers: number;
-
-  // Ownership / lifecycle.
-  creatorId: string;
-  status: CampaignStatus;
-  createdAt: string;
-
-  // Extended detail/wizard fields (optional — not every select populates them).
-  targetAudience?: string;
-  longDescription?: string;
-  story?: string;
-  coverImageUrl?: string;
-  mediaUrls?: string[];
-  /** Alias of `goal` used by the wizard form values. */
-  goalAmount?: number;
-  currency?: string;
-  deadline?: string;
-  donorWallEnabled?: boolean;
-}
-
-/**
- * Values collected by the multi-step Create/Edit Campaign wizard
- * (Basic Info, Details, Goal & Deadline, Bank Details).
- */
-export interface CampaignFormValues {
-  title: string;
-  description: string;
-  category: string;
-  targetAudience: string;
-
-  longDescription: string;
-  story: string;
-  coverImageUrl: string;
-  mediaUrls: string[];
-
-  goalAmount: number;
-  currency: string;
-  deadline: string;
-  donorWallEnabled: boolean;
-
-  accountHolderName: string;
-  bankName: string;
-  accountNumber: string;
-  routingNumber: string;
-  swiftBic: string;
-  country: string;
-}
-
-/**
- * Category filter union used by the Explore page filter chips and the
- * `useCampaigns` hook. `'All'` is the sentinel meaning "no category filter";
- * the remaining members are the eight canonical campaign categories.
- *
- * This is a pure, erasable type. Its non-`'All'` members drive
- * {@link CAMPAIGN_CATEGORIES}, and the full union drives
- * {@link CATEGORY_FILTERS}. Keep the union and those arrays in sync.
- */
-export type CategoryFilter =
-  | "All"
-  | "Technology"
-  | "Community"
-  | "Education"
-  | "Health"
-  | "Environment"
-  | "Arts"
-  | "Business"
-  | "Other";
-
-/**
- * Normalize a raw Supabase row into the camelCase {@link Campaign} model,
- * applying safe numeric/string defaults so consumers never deal with nulls.
- */
-export function mapRowToCampaign(row: CampaignRow): Campaign {
-  const goal = Number(row.goal ?? 0);
-  return {
-    id: row.id,
-    title: row.title ?? "",
-    category: row.category ?? "",
-    description: row.description ?? "",
-    raised: Number(row.raised ?? 0),
-    goal,
-    backers: Number(row.backers ?? 0),
-
-    creatorId: row.creator_id ?? "",
-    status: (row.status ?? "active") as CampaignStatus,
-    createdAt: row.created_at ?? "",
-
-    targetAudience: row.target_audience ?? undefined,
-    longDescription: row.long_description ?? undefined,
-    story: row.story ?? undefined,
-    coverImageUrl: row.cover_image_url ?? undefined,
-    mediaUrls: row.media_urls ?? undefined,
-    goalAmount: goal,
-    currency: row.currency ?? undefined,
-    deadline: row.deadline ?? undefined,
-    donorWallEnabled:
-      row.donor_wall_enabled === null || row.donor_wall_enabled === undefined
-        ? undefined
-        : row.donor_wall_enabled,
-  };
-}
-
-/**
- * Funding progress as an integer percentage in the range [0, 100]. Guards
- * against division by zero when the goal is unset.
- */
-export function campaignProgress(campaign: Campaign): number {
-  if (!campaign.goal || campaign.goal <= 0) return 0;
-  const pct = Math.round((campaign.raised / campaign.goal) * 100);
-  return Math.max(0, Math.min(100, pct));
-}
-
-export const CAMPAIGN_CATEGORIES: readonly Exclude<CategoryFilter, "All">[] = [
-  "Technology",
-  "Community",
-  "Education",
-  "Health",
-  "Environment",
-  "Arts",
-  "Business",
-  "Other",
-] as const;
-
-export const CATEGORY_FILTERS: readonly CategoryFilter[] = [
-  "All",
-  ...CAMPAIGN_CATEGORIES,
-] as const;
 // [sticky-export] CampaignCurrency — recovered from prior version
 export type CampaignCurrency = "USD" | "EUR" | "GBP" | "CAD" | "AUD";
