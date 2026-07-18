@@ -43,10 +43,12 @@ export function Explore() {
 
   return (
     <>
-      <PageHeader
-        title="Explore Campaigns"
-        description="Discover causes and projects from creators and organizations around the world. Find something worth backing."
-      />
+      <div className="container mx-auto px-4 py-6">
+        <PageHeader
+          title="Explore Campaigns"
+          description="Discover causes and projects from creators and organizations around the world. Find something worth backing."
+        />
+      </div>
 
       <section className="container mx-auto px-4 py-12">
         {/* Search + filters */}

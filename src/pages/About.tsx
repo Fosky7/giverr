@@ -42,16 +42,19 @@ const VALUES: ValueItem[] = [
 export function About() {
   return (
     <>
-      <PageHeader
-        title="About Rayze"
-        description="We're building the most trusted place to raise funds for the ideas and causes that move the world forward."
-        eyebrow={
-          <span className="inline-flex items-center gap-2 rounded-full bg-secondary px-4 py-1.5 text-sm font-medium text-secondary-foreground">
-            <Sparkles className="h-4 w-4" />
-            Our story
-          </span>
-        }
-      />
+      <div className="container mx-auto px-4 py-6">
+        <PageHeader
+          centered
+          title="About Rayze"
+          description="We're building the most trusted place to raise funds for the ideas and causes that move the world forward."
+          eyebrow={
+            <span className="inline-flex items-center gap-2 rounded-full bg-secondary px-4 py-1.5 text-sm font-medium text-secondary-foreground">
+              <Sparkles className="h-4 w-4" />
+              Our story
+            </span>
+          }
+        />
+      </div>
 
       <section className="container mx-auto px-4 py-16">
         {/* Mission */}
@@ -68,8 +71,8 @@ export function About() {
         </div>
 
         {/* Story */}
-        <div className="mx-auto mt-16 max-w-3xl space-y-4">
-          <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+        <div className="mx-auto mt-16 max-w-3xl space-y-4 px-4">
+          <h2 className="text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             How it started
           </h2>
           <p className="text-muted-foreground">

@@ -67,32 +67,30 @@ const SECTIONS: TermsSection[] = [
  */
 export function Terms() {
   return (
-    <>
-      <PageHeader
-        title="Terms of Service"
-        description={`Last updated: ${LAST_UPDATED}`}
-      />
+    <section className="container mx-auto px-4 py-16">
+      <div className="mx-auto max-w-3xl space-y-10">
+        <PageHeader
+          title="Terms of Service"
+          description={`Last updated: ${LAST_UPDATED}`}
+        />
 
-      <section className="container mx-auto px-4 py-16">
-        <div className="mx-auto max-w-3xl space-y-10">
-          {SECTIONS.map((section, index) => (
-            <div key={section.heading} className="space-y-4">
-              <h2 className="text-xl font-semibold text-foreground sm:text-2xl">
-                {section.heading}
-              </h2>
-              {section.paragraphs.map((paragraph, i) => (
-                <p key={i} className="text-muted-foreground">
-                  {paragraph}
-                </p>
-              ))}
-              {index < SECTIONS.length - 1 ? (
-                <Separator className="mt-8" />
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </section>
-    </>
+        {SECTIONS.map((section, index) => (
+          <div key={section.heading} className="space-y-4">
+            <h2 className="text-xl font-semibold text-foreground sm:text-2xl">
+              {section.heading}
+            </h2>
+            {section.paragraphs.map((paragraph, i) => (
+              <p key={i} className="text-muted-foreground">
+                {paragraph}
+              </p>
+            ))}
+            {index < SECTIONS.length - 1 ? (
+              <Separator className="mt-8" />
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
