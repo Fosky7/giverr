@@ -39,7 +39,6 @@ import Dashboard from "@/pages/Dashboard";
 import DashboardPage from "@/pages/DashboardPage";
 import CreateCampaignPage from "@/pages/CreateCampaignPage";
 import ProfileSettingsPage from "@/pages/ProfileSettingsPage";
-import Start from "@/pages/Start";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -129,7 +128,6 @@ export function App() {
                     />
 
                     {/* Fallback */}
-        <Route path="/start" element={<Start />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </Suspense>

@@ -63,10 +63,12 @@ const SECTIONS: PolicySection[] = [
 export function Privacy() {
   return (
     <>
-      <PageHeader
-        title="Privacy Policy"
-        description={`Last updated: ${LAST_UPDATED}`}
-      />
+      <div className="container mx-auto px-4 py-6">
+        <PageHeader
+          title="Privacy Policy"
+          description={`Last updated: ${LAST_UPDATED}`}
+        />
+      </div>
 
       <section className="container mx-auto px-4 py-16">
         <div className="mx-auto max-w-3xl space-y-10">

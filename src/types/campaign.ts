@@ -1,205 +1,135 @@
 // src/types/campaign.ts
-//
-// Central types, constants, and helpers for the Campaign Management module.
-// Consumers import named exports from here (e.g. Campaign, CampaignFormValues,
-// CAMPAIGN_CATEGORIES, CATEGORY_FILTERS, mapRowToCampaign, campaignProgress).
-//
-// NOTE: This file is the single source of truth for campaign category options.
-// The Create/Edit Campaign wizard (Step 1) renders CAMPAIGN_CATEGORIES as a
-// selectable dropdown, and the Explore filters use CATEGORY_FILTERS.
 
-import type { Database } from "@/integrations/supabase/types";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Category constants
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * The selectable campaign categories, in display order. Used by the campaign
- * creation/edit wizard's category <Select> and validated by the form schema.
- *
- * Kept as a readonly tuple so a union type can be derived when needed while the
- * `category` form field itself remains a plain string.
- */
+// Catalog of campaign categories used in creation wizard and explore filters.
 export const CAMPAIGN_CATEGORIES = [
-  "Medical",
   "Education",
-  "Community",
-  "Emergency",
-  "Animals",
+  "Health",
   "Environment",
-  "Nonprofit",
-  "Business",
-  "Creative",
-  "Sports",
-  "Faith",
-  "Memorial",
-  "Family",
   "Technology",
+  "Community",
+  "Arts",
+  "Sports",
+  "Emergency",
+  "Faith",
   "Other",
 ] as const;
 
-/** Union of the valid category labels (derived from the constant above). */
-export type CampaignCategory = (typeof CAMPAIGN_CATEGORIES)[number];
+// Filters allow the user to pick any category or view all.
+export const CATEGORY_FILTERS = CAMPAIGN_CATEGORIES;
 
 /**
- * Category options for the Explore filter bar. Includes an "All" pseudo-option
- * up front so the filter can represent "no category filter" without special
- * casing at every call site.
+ * Campaign statuses – maps to the database enum.
  */
-export const CATEGORY_FILTERS = [
-  "All",
-  ...CAMPAIGN_CATEGORIES,
-] as const;
-
-export type CategoryFilter = (typeof CATEGORY_FILTERS)[number];
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Domain types
-// ─────────────────────────────────────────────────────────────────────────────
-
 export type CampaignStatus = "draft" | "active" | "paused" | "closed";
 
-/** The public/domain shape of a campaign used across pages and components. */
+/**
+ * Shape of a single campaign row as returned by the backend mapper.
+ * (Also used by createCampaign and updateCampaign service functions.)
+ */
 export interface Campaign {
   id: string;
-  creatorId: string | null;
   title: string;
   description: string;
   category: string;
-  targetAudience: string;
-
-  longDescription: string;
-  story: string;
-  coverImageUrl: string;
+  targetAudience?: string;
+  longDescription?: string;
+  story?: string;
+  coverImageUrl?: string;
   mediaUrls: string[];
-
   goalAmount: number;
   currency: string;
   deadline: string;
-
+  donorWallEnabled: boolean;
   raisedAmount: number;
   backersCount: number;
-
   status: CampaignStatus;
-  donorWallEnabled: boolean;
-
-  createdAt: string;
-  updatedAt: string;
+  creatorId?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
- * The values collected by the multi-step Create/Edit Campaign wizard. The
- * `category` field is intentionally a plain string (validated against
- * CAMPAIGN_CATEGORIES by the zod schema) so the Select control can bind to it
- * directly without extra coercion.
+ * Form values for the multi-step creation / edit wizard.
+ * Mirrors the fields of the campaigns table, plus secure bank details
+ * that are persisted via the dedicated bank-details edge function.
  */
 export interface CampaignFormValues {
-  // Step 1 — basic info
   title: string;
   description: string;
   category: string;
   targetAudience: string;
-
-  // Step 2 — details
   longDescription: string;
   story: string;
   coverImageUrl: string;
   mediaUrls: string[];
-
-  // Step 3 — goal & deadline
   goalAmount: number;
   currency: string;
   deadline: string;
   donorWallEnabled: boolean;
 
-  // Step 4 — bank details
+  // Bank details (only sent to the secure edge function, never stored in the client)
   accountHolderName: string;
   bankName: string;
   accountNumber: string;
-  routingNumber: string;
-  swiftBic: string;
+  routingNumber?: string;
+  swiftBic?: string;
   country: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Row mapping + helpers
-// ─────────────────────────────────────────────────────────────────────────────
+/** Utility: derive progress percentage (0‑100), guard against 0 goal. */
+export function campaignProgress(campaign: Campaign): number {
+  if (!campaign.goalAmount || campaign.goalAmount <= 0) return 0;
+  return Math.min(
+    100,
+    Math.round((campaign.raisedAmount / campaign.goalAmount) * 100)
+  );
+}
 
-/** Convenience alias for the raw campaigns table row shape. */
-export type CampaignRow = Database["public"]["Tables"]["campaigns"]["Row"];
-
-/**
- * Map a raw Supabase `campaigns` row (snake_case) into the camelCase domain
- * {@link Campaign} used throughout the UI. Missing/nullable columns are
- * normalized to safe defaults so consumers never have to null-check basics.
- */
-export function mapRowToCampaign(row: CampaignRow): Campaign {
+/** Maps a raw database row to the Campaign interface. */
+export function mapRowToCampaign(row: Record<string, unknown>): Campaign {
   return {
-    id: row.id,
-    creatorId: row.creator_id ?? null,
-    title: row.title ?? "",
-    description: row.description ?? "",
-    category: row.category ?? "",
-    targetAudience: row.target_audience ?? "",
-
-    longDescription: row.long_description ?? "",
-    story: row.story ?? "",
-    coverImageUrl: row.cover_image_url ?? "",
-    mediaUrls: (row.media_urls as string[] | null) ?? [],
-
-    goalAmount: Number(row.goal_amount ?? 0),
-    currency: row.currency ?? "USD",
-    deadline: row.deadline ?? "",
-
-    raisedAmount: Number(row.raised_amount ?? 0),
-    backersCount: Number(row.backers_count ?? 0),
-
+    id: String(row.id ?? ""),
+    title: String(row.title ?? ""),
+    description: String(row.description ?? ""),
+    category: String(row.category ?? ""),
+    targetAudience: row.targetAudience ? String(row.targetAudience) : undefined,
+    longDescription: row.longDescription ? String(row.longDescription) : undefined,
+    story: row.story ? String(row.story) : undefined,
+    coverImageUrl: row.coverImageUrl ? String(row.coverImageUrl) : undefined,
+    mediaUrls: Array.isArray(row.mediaUrls) ? (row.mediaUrls as string[]) : [],
+    goalAmount: Number(row.goalAmount ?? 0),
+    currency: String(row.currency ?? "USD"),
+    deadline: String(row.deadline ?? ""),
+    donorWallEnabled: Boolean(row.donorWallEnabled),
+    raisedAmount: Number(row.raisedAmount ?? 0),
+    backersCount: Number(row.backersCount ?? 0),
     status: (row.status as CampaignStatus) ?? "draft",
-    donorWallEnabled: row.donor_wall_enabled ?? true,
-
-    createdAt: row.created_at ?? "",
-    updatedAt: row.updated_at ?? "",
+    creatorId: row.creatorId ? String(row.creatorId) : undefined,
+    created_at: row.created_at ? String(row.created_at) : undefined,
+    updated_at: row.updated_at ? String(row.updated_at) : undefined,
   };
 }
 
-/** Funding progress summary for a campaign, used by progress panels/cards. */
-export interface CampaignProgressResult {
-  percent: number;
+/**
+ * Raw database row shape for campaigns. Matches the columns selected by
+ * useCampaigns.ts and used by the mapper.
+ */
+export type CampaignRow = {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
   raised: number;
   goal: number;
   backers: number;
-  daysLeft: number | null;
-}
+  creator_id: string;
+  created_at: string;
+};
 
 /**
- * Compute clamped funding progress for a campaign. Percent is an integer in
- * the 0–100 range (guards against a 0 goal). `daysLeft` is null when there is
- * no deadline; otherwise it is the whole number of days remaining (>= 0).
+ * Category filter state – a union of the literal category strings plus 'All'.
  */
-export function campaignProgress(campaign: Campaign): CampaignProgressResult {
-  const goal = campaign.goalAmount > 0 ? campaign.goalAmount : 0;
-  const raised = campaign.raisedAmount ?? 0;
-  const percent =
-    goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : 0;
-
-  let daysLeft: number | null = null;
-  if (campaign.deadline) {
-    const end = new Date(campaign.deadline).getTime();
-    if (!Number.isNaN(end)) {
-      const diffMs = end - Date.now();
-      daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-    }
-  }
-
-  return {
-    percent,
-    raised,
-    goal,
-    backers: campaign.backersCount ?? 0,
-    daysLeft,
-  };
-}
+export type CategoryFilter = typeof CAMPAIGN_CATEGORIES[number] | "All";
 
 // ── Auto-generated by KrossBuild named-export gate ──
 // These bindings were imported elsewhere but missing here. Preserved blocks

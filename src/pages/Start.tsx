@@ -10,7 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { CAMPAIGN_CATEGORIES } from "@/types/campaign";
 import { createCampaign } from "@/services/campaigns";
@@ -18,24 +24,20 @@ import { createCampaign } from "@/services/campaigns";
 /** Local shape of the create-campaign form. */
 interface CampaignFormState {
   title: string;
-  /** Multi-select category selection (checkable chips). */
-  categories: string[];
+  category: string;
   goalAmount: string;
   description: string;
 }
 
 const INITIAL_STATE: CampaignFormState = {
   title: "",
-  categories: [],
+  category: "",
   goalAmount: "",
   description: "",
 };
 
 /** Per-field validation errors keyed by form field. */
 type FieldErrors = Partial<Record<keyof CampaignFormState, string>>;
-
-/** String-only fields editable via the generic {@link Start} `handleChange`. */
-type StringField = "title" | "goalAmount" | "description";
 
 /**
  * Validate the form client-side, returning a map of field → message. An empty
@@ -49,8 +51,8 @@ function validate(form: CampaignFormState): FieldErrors {
     errors.title = "Please enter a campaign title.";
   }
 
-  if (form.categories.length === 0) {
-    errors.categories = "Please choose at least one category.";
+  if (!form.category) {
+    errors.category = "Please choose a category.";
   }
 
   const goal = Number(form.goalAmount);
@@ -70,8 +72,6 @@ function validate(form: CampaignFormState): FieldErrors {
 /**
  * Start a Campaign page. A real, auth-gated create-campaign form:
  *  - Client-side validation with inline per-field errors.
- *  - Categories are a checkable (multi-select) group of checkbox chips; at
- *    least one selection is required.
  *  - Unauthenticated users are redirected to /login on submit, preserving
  *    intent via router state (so the app can return them here afterwards).
  *  - Authenticated submit persists via {@link createCampaign}, shows a loading
@@ -88,35 +88,15 @@ export function Start() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  /** Clear a field's error (shared clear-on-edit helper). */
-  const clearFieldError = (field: keyof CampaignFormState) => {
+  const handleChange = (field: keyof CampaignFormState, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    // Clear the field's error as the user edits it.
     setFieldErrors((prev) => {
       if (!prev[field]) return prev;
       const next = { ...prev };
       delete next[field];
       return next;
     });
-  };
-
-  const handleChange = (field: StringField, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-    // Clear the field's error as the user edits it.
-    clearFieldError(field);
-  };
-
-  /**
-   * Toggle a category in/out of the selection immutably, and clear any
-   * existing categories error (mirrors the clear-on-edit pattern above).
-   */
-  const toggleCategory = (category: string) => {
-    setForm((prev) => {
-      const isSelected = prev.categories.includes(category);
-      const categories = isSelected
-        ? prev.categories.filter((c) => c !== category)
-        : [...prev.categories, category];
-      return { ...prev, categories };
-    });
-    clearFieldError("categories");
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -140,10 +120,7 @@ export function Start() {
     try {
       const campaign = await createCampaign({
         title: form.title,
-        // createCampaign currently accepts a single `category` string. Until a
-        // categories[] column exists, deterministically send the primary
-        // (first) selection to avoid silent data loss.
-        category: form.categories[0],
+        category: form.category,
         goalAmount: Number(form.goalAmount),
         description: form.description,
       });
@@ -220,51 +197,31 @@ export function Start() {
               ) : null}
             </div>
 
-            {/* Checkable multi-select category group (replaces the Select). */}
             <div className="space-y-2">
-              <Label id="category-group-label" asChild>
-                <span>Category</span>
-              </Label>
-              <div
-                role="group"
-                aria-labelledby="category-group-label"
-                aria-invalid={Boolean(fieldErrors.categories)}
-                className={cn(
-                  "flex flex-wrap gap-2 rounded-md border border-input bg-background p-3",
-                  fieldErrors.categories && "border-destructive"
-                )}
+              <Label htmlFor="category">Category</Label>
+              <Select
+                value={form.category}
+                onValueChange={(value) => handleChange("category", value)}
+                disabled={submitting}
               >
-                {CAMPAIGN_CATEGORIES.map((category) => {
-                  const checkboxId = `category-${category
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, "-")}`;
-                  const checked = form.categories.includes(category);
-                  return (
-                    <Label
-                      key={category}
-                      htmlFor={checkboxId}
-                      className={cn(
-                        "inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
-                        checked
-                          ? "border-primary bg-primary/10 text-foreground"
-                          : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                        submitting && "cursor-not-allowed opacity-60"
-                      )}
-                    >
-                      <Checkbox
-                        id={checkboxId}
-                        checked={checked}
-                        onCheckedChange={() => toggleCategory(category)}
-                        disabled={submitting}
-                      />
+                <SelectTrigger
+                  id="category"
+                  aria-invalid={Boolean(fieldErrors.category)}
+                  className={cn(fieldErrors.category && "border-destructive")}
+                >
+                  <SelectValue placeholder="Choose a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CAMPAIGN_CATEGORIES.map((category) => (
+                    <SelectItem key={category} value={category}>
                       {category}
-                    </Label>
-                  );
-                })}
-              </div>
-              {fieldErrors.categories ? (
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {fieldErrors.category ? (
                 <p className="text-sm text-destructive">
-                  {fieldErrors.categories}
+                  {fieldErrors.category}
                 </p>
               ) : null}
             </div>

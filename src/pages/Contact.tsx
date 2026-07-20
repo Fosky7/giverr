@@ -1,37 +1,14 @@
-import { useState } from "react";
-import type { FormEvent } from "react";
-import {
-  CheckCircle2,
-  Loader2,
-  Mail,
-  MapPin,
-  MessageSquare,
-  Phone,
-} from "lucide-react";
+import { Mail, MapPin, MessageSquare, Phone } from "lucide-react";
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { RetryState } from "@/components/feedback/RetryState";
-
-/** Local shape of the placeholder contact form. */
-interface ContactFormState {
-  name: string;
-  email: string;
-  message: string;
-}
-
-const INITIAL_STATE: ContactFormState = {
-  name: "",
-  email: "",
-  message: "",
-};
-
-// Async-style lifecycle for the submit stub. Structured so wiring a real
-// endpoint later only means replacing the body of `sendMessage`.
-type SendStatus = "idle" | "sending" | "sent" | "error";
+import { useContactForm } from "@/hooks/useContactForm";
+import { Loader2 } from "lucide-react";
+import { AlertCircle, Check, Send } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ContactDetail {
   label: string;
@@ -46,108 +23,80 @@ const CONTACT_DETAILS: ContactDetail[] = [
 ];
 
 /**
- * Contact page. Renders a contact form (name, email, message) with an
- * async-style submit stub that surfaces sending / sent / error feedback. On a
- * (future) send failure it shows an inline <RetryState> so the user can retry
- * without losing their input. Backend wiring is intentionally a no-op for now.
+ * Contact page. Renders a fully functional contact form with:
+ * - Client-side validation (name, email format, message length)
+ * - Loading spinner on submit
+ * - Inline server error alerts
+ * - Success state: thank-you message with option to send another
+ * - Form disabled during submission to prevent double-clicks
+ *
+ * Replaces the previous no-op stub with the `useContactForm` hook.
  */
 export function Contact() {
-  const [form, setForm] = useState<ContactFormState>(INITIAL_STATE);
-  const [status, setStatus] = useState<SendStatus>("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const handleChange = (field: keyof ContactFormState, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  /**
-   * Placeholder "send" operation. Currently a no-op that resolves, structured
-   * so a real endpoint (edge function / email service) drops straight in here.
-   */
-  const sendMessage = async (payload: ContactFormState): Promise<void> => {
-    // TODO (later module): POST to a backend endpoint / email service.
-    // eslint-disable-next-line no-console
-    console.info("Contact message (stub, not sent):", payload);
-    // Simulate an async round-trip without any real network call.
-    await new Promise((resolve) => setTimeout(resolve, 400));
-  };
-
-  const submit = async () => {
-    // Guard against overlapping submits leaving the button stuck.
-    if (status === "sending") return;
-
-    setStatus("sending");
-    setErrorMessage(null);
-
-    try {
-      await sendMessage(form);
-      setStatus("sent");
-    } catch (err) {
-      setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : "We couldn't send your message. Please try again."
-      );
-      setStatus("error");
-    }
-  };
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    void submit();
-  };
-
-  const resetForm = () => {
-    setForm(INITIAL_STATE);
-    setStatus("idle");
-    setErrorMessage(null);
-  };
-
-  const isSending = status === "sending";
+  const {
+    values,
+    fieldErrors,
+    serverError,
+    submitting,
+    success,
+    handleChange,
+    handleSubmit,
+    reset,
+  } = useContactForm();
 
   return (
     <>
-      <PageHeader
-        title="Contact us"
-        description="Questions, feedback, or partnership ideas? We'd love to hear from you."
-        eyebrow={
-          <span className="inline-flex items-center gap-2 rounded-full bg-secondary px-4 py-1.5 text-sm font-medium text-secondary-foreground">
-            <MessageSquare className="h-4 w-4" />
-            Get in touch
-          </span>
-        }
-      />
+      <div className="container mx-auto px-4">
+        <PageHeader
+          title="Contact us"
+          description="Questions, feedback, or partnership ideas? We'd love to hear from you."
+          eyebrow={
+            <span className="inline-flex items-center gap-2 rounded-full bg-secondary px-4 py-1.5 text-sm font-medium text-secondary-foreground">
+              <MessageSquare className="h-4 w-4" />
+              Get in touch
+            </span>
+          }
+        />
+      </div>
 
       <section className="container mx-auto px-4 py-16">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-3">
-          {/* Form / status */}
+          {/* Form */}
           <div className="lg:col-span-2">
-            {status === "sent" ? (
-              <div className="space-y-6">
-                <div
-                  role="status"
-                  className="flex items-start gap-2 rounded-md border border-primary/40 bg-primary/10 px-4 py-4 text-sm text-foreground"
+            {success ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Check className="h-8 w-8" />
+                </span>
+                <h2 className="mt-6 text-xl font-semibold text-foreground">
+                  Message sent!
+                </h2>
+                <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+                  We&apos;ve received your message and will get back to you
+                  shortly.
+                </p>
+                <Button
+                  variant="outline"
+                  className="mt-8"
+                  onClick={reset}
                 >
-                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                  <span>
-                    Thanks for reaching out! Your message has been received and
-                    we'll get back to you soon.
-                  </span>
-                </div>
-                <Button variant="outline" onClick={resetForm}>
+                  <Send className="mr-2 h-4 w-4" />
                   Send another message
                 </Button>
               </div>
-            ) : status === "error" ? (
-              <RetryState
-                className="mx-0 max-w-none items-start text-left"
-                title="Message not sent"
-                description={errorMessage}
-                onRetry={submit}
-                retrying={isSending}
-              />
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+                {/* Server error alert (from the stub / future API) */}
+                {serverError ? (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                  >
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{serverError}</span>
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="name">Name</Label>
@@ -155,10 +104,17 @@ export function Contact() {
                       id="name"
                       name="name"
                       placeholder="Your name"
-                      value={form.name}
-                      onChange={(e) => handleChange("name", e.target.value)}
-                      disabled={isSending}
+                      value={values.name}
+                      onChange={handleChange("name")}
+                      disabled={submitting}
+                      aria-invalid={Boolean(fieldErrors.name)}
+                      className={cn(fieldErrors.name && "border-destructive")}
                     />
+                    {fieldErrors.name ? (
+                      <p className="text-sm text-destructive">
+                        {fieldErrors.name}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
@@ -167,10 +123,19 @@ export function Contact() {
                       name="email"
                       type="email"
                       placeholder="you@example.com"
-                      value={form.email}
-                      onChange={(e) => handleChange("email", e.target.value)}
-                      disabled={isSending}
+                      value={values.email}
+                      onChange={handleChange("email")}
+                      disabled={submitting}
+                      aria-invalid={Boolean(fieldErrors.email)}
+                      className={cn(
+                        fieldErrors.email && "border-destructive",
+                      )}
                     />
+                    {fieldErrors.email ? (
+                      <p className="text-sm text-destructive">
+                        {fieldErrors.email}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -181,14 +146,23 @@ export function Contact() {
                     name="message"
                     rows={6}
                     placeholder="How can we help?"
-                    value={form.message}
-                    onChange={(e) => handleChange("message", e.target.value)}
-                    disabled={isSending}
+                    value={values.message}
+                    onChange={handleChange("message")}
+                    disabled={submitting}
+                    aria-invalid={Boolean(fieldErrors.message)}
+                    className={cn(
+                      fieldErrors.message && "border-destructive",
+                    )}
                   />
+                  {fieldErrors.message ? (
+                    <p className="text-sm text-destructive">
+                      {fieldErrors.message}
+                    </p>
+                  ) : null}
                 </div>
 
-                <Button type="submit" size="lg" disabled={isSending}>
-                  {isSending ? (
+                <Button type="submit" size="lg" disabled={submitting}>
+                  {submitting ? (
                     <>
                       <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                       Sending…

@@ -1,148 +1,91 @@
-// src/components/campaign/CampaignFormSteps.tsx
-//
-// Presentational step components for the multi-step Create/Edit Campaign wizard.
-//
-// Each step reads/writes the SINGLE react-hook-form instance owned by the
-// orchestrator page (CreateCampaignPage / EditCampaignPage) via the shared
-// FormContext (useFormContext), so no props need to be threaded through.
-//
-// Step 1 (Basic info) renders the campaign's `category` as a selectable
-// shadcn Select dropdown backed by the shared CAMPAIGN_CATEGORIES constant
-// (exported from src/types/campaign.ts). The control is fully controlled
-// (value={field.value}) so the persisted category is shown on load in the
-// Edit flow, and a missing selection is blocked by the per-step zod schema.
-
 import { useFormContext } from "react-hook-form";
-
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { RichTextEditor } from "@/components/campaign/RichTextEditor";
-import { MediaUploader } from "@/components/campaign/MediaUploader";
 import { CAMPAIGN_CATEGORIES } from "@/types/campaign";
-import type { CampaignFormValues } from "@/types/campaign";
+import { cn } from "@/lib/utils";
 
-/* ------------------------------------------------------------------------- *
- * Step 1 — Basic info
- * ------------------------------------------------------------------------- */
-
-/**
- * Collects the campaign's title, short description, category, and target
- * audience. `category` renders as a selectable dropdown sourced from the
- * shared CAMPAIGN_CATEGORIES constant so it stays in sync with the Explore
- * filters. Shared by both the Create and Edit flows.
- */
 export function Step1BasicInfo() {
-  const form = useFormContext<CampaignFormValues>();
+  const { control } = useFormContext();
 
   return (
     <div className="space-y-6">
       <FormField
-        control={form.control}
+        control={control}
         name="title"
         render={({ field }) => (
           <FormItem>
             <FormLabel>Campaign title</FormLabel>
             <FormControl>
-              <Input
-                placeholder="e.g. Help rebuild the community garden"
-                autoComplete="off"
-                {...field}
-              />
+              <Input placeholder="Give your campaign a clear, compelling name" {...field} />
             </FormControl>
-            <FormDescription>
-              A clear, compelling title that captures your cause.
-            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
       />
-
       <FormField
-        control={form.control}
+        control={control}
         name="description"
         render={({ field }) => (
           <FormItem>
             <FormLabel>Short description</FormLabel>
             <FormControl>
-              <Textarea
-                rows={3}
-                placeholder="Summarize your campaign in a sentence or two."
-                {...field}
-              />
+              <Textarea placeholder="Summarise your campaign in a sentence or two" {...field} />
             </FormControl>
-            <FormDescription>
-              This appears on campaign cards and in search results.
-            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
       />
-
       <FormField
-        control={form.control}
+        control={control}
         name="category"
         render={({ field }) => (
           <FormItem>
             <FormLabel>Category</FormLabel>
-            {/* Controlled Select — `value` reflects persisted category in the
-                Edit flow; onValueChange writes back to form state. */}
-            <Select
-              value={field.value || undefined}
-              onValueChange={field.onChange}
-            >
-              <FormControl>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-              </FormControl>
-              <SelectContent>
-                {CAMPAIGN_CATEGORIES.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
-                  </SelectItem>
+            <FormControl>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Campaign category">
+                {CAMPAIGN_CATEGORIES.map((cat) => (
+                  <Button
+                    key={cat}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    role="radio"
+                    aria-checked={field.value === cat}
+                    className={cn(
+                      "rounded-full border-border/60 transition-colors",
+                      field.value === cat && "bg-primary/10 text-primary border-primary"
+                    )}
+                    onClick={() => {
+                      if (field.value === cat) {
+                        field.onChange("");
+                      } else {
+                        field.onChange(cat);
+                      }
+                    }}
+                    tabIndex={0}
+                  >
+                    {cat}
+                  </Button>
                 ))}
-              </SelectContent>
-            </Select>
-            <FormDescription>
-              Choose the category that best fits your campaign.
-            </FormDescription>
+              </div>
+            </FormControl>
             <FormMessage />
           </FormItem>
         )}
       />
-
       <FormField
-        control={form.control}
+        control={control}
         name="targetAudience"
         render={({ field }) => (
           <FormItem>
             <FormLabel>Target audience</FormLabel>
             <FormControl>
-              <Input
-                placeholder="e.g. Local families, students, small businesses"
-                autoComplete="off"
-                {...field}
-              />
+              <Input placeholder="e.g. Local community, Students, Animal lovers" {...field} />
             </FormControl>
-            <FormDescription>
-              Who benefits from this campaign?
-            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
@@ -151,100 +94,66 @@ export function Step1BasicInfo() {
   );
 }
 
-/* ------------------------------------------------------------------------- *
- * Step 2 — Details (rich text + media)
- * ------------------------------------------------------------------------- */
-
-/**
- * Collects the long description, creator story (both rich text), a cover image,
- * and an optional media gallery. Media is uploaded eagerly by the uploader
- * components, which store the returned public URLs into form state.
- */
 export function Step2Details() {
-  const form = useFormContext<CampaignFormValues>();
+  const { control } = useFormContext();
 
   return (
     <div className="space-y-6">
       <FormField
-        control={form.control}
+        control={control}
         name="longDescription"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Full description</FormLabel>
+            <FormLabel>Long description</FormLabel>
             <FormControl>
-              <RichTextEditor
-                value={field.value}
-                onChange={field.onChange}
-                placeholder="Describe your campaign in detail…"
-              />
+              <Textarea placeholder="Tell your story in detail" className="min-h-[150px]" {...field} />
             </FormControl>
-            <FormDescription>
-              Explain the who, what, and why behind your campaign.
-            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
       />
-
       <FormField
-        control={form.control}
+        control={control}
         name="story"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Your story</FormLabel>
+            <FormLabel>Story</FormLabel>
             <FormControl>
-              <RichTextEditor
-                value={field.value}
-                onChange={field.onChange}
-                placeholder="Share the personal story behind your cause…"
-              />
+              <Textarea placeholder="Share the inspiration behind your campaign" className="min-h-[150px]" {...field} />
             </FormControl>
-            <FormDescription>
-              A personal story helps backers connect with your cause.
-            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
       />
-
       <FormField
-        control={form.control}
+        control={control}
         name="coverImageUrl"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Cover image</FormLabel>
+            <FormLabel>Cover image URL</FormLabel>
             <FormControl>
-              <MediaUploader
-                value={field.value ? [field.value] : []}
-                onChange={(urls) => field.onChange(urls[0] ?? "")}
-                maxFiles={1}
-                accept="image/*"
-              />
+              <Input placeholder="https://example.com/image.jpg" {...field} />
             </FormControl>
-            <FormDescription>
-              A striking banner image shown at the top of your campaign.
-            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
       />
-
       <FormField
-        control={form.control}
+        control={control}
         name="mediaUrls"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Gallery (optional)</FormLabel>
+            <FormLabel>Media URLs (comma separated)</FormLabel>
             <FormControl>
-              <MediaUploader
-                value={field.value}
-                onChange={field.onChange}
-                maxFiles={8}
+              <Input
+                placeholder="https://example.com/img1.jpg, https://example.com/video.mp4"
+                value={field.value?.join(", ") || ""}
+                onChange={(e) => {
+                  const arr = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+                  field.onChange(arr);
+                }}
               />
             </FormControl>
-            <FormDescription>
-              Add up to 8 additional photos or videos.
-            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
@@ -253,76 +162,55 @@ export function Step2Details() {
   );
 }
 
-/* ------------------------------------------------------------------------- *
- * Step 3 — Goal & deadline
- * ------------------------------------------------------------------------- */
-
-/**
- * Collects the funding goal, currency, deadline, and the donor-wall toggle.
- */
 export function Step3GoalDeadline() {
-  const form = useFormContext<CampaignFormValues>();
+  const { control } = useFormContext();
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-[1fr_140px]">
-        <FormField
-          control={form.control}
-          name="goalAmount"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Funding goal</FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  min={1}
-                  step="1"
-                  placeholder="10000"
-                  value={field.value === 0 ? "" : field.value}
-                  onChange={(e) =>
-                    field.onChange(
-                      e.target.value === "" ? 0 : Number(e.target.value)
-                    )
-                  }
-                  onBlur={field.onBlur}
-                  name={field.name}
-                  ref={field.ref}
-                />
-              </FormControl>
-              <FormDescription>
-                The total amount you aim to raise.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="currency"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Currency</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="USD" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="EUR">EUR</SelectItem>
-                  <SelectItem value="GBP">GBP</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-
       <FormField
-        control={form.control}
+        control={control}
+        name="goalAmount"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Goal amount</FormLabel>
+            <FormControl>
+              <Input
+                type="number"
+                min="1"
+                placeholder="10000"
+                {...field}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+                value={field.value || ""}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="currency"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Currency</FormLabel>
+            <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select currency" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="EUR">EUR</SelectItem>
+                <SelectItem value="GBP">GBP</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
         name="deadline"
         render={({ field }) => (
           <FormItem>
@@ -330,30 +218,23 @@ export function Step3GoalDeadline() {
             <FormControl>
               <Input type="date" {...field} />
             </FormControl>
-            <FormDescription>
-              When should your campaign stop accepting contributions?
-            </FormDescription>
             <FormMessage />
           </FormItem>
         )}
       />
-
       <FormField
-        control={form.control}
+        control={control}
         name="donorWallEnabled"
         render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/60 p-4">
+          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
             <div className="space-y-0.5">
-              <FormLabel>Show donor wall</FormLabel>
-              <FormDescription>
-                Publicly display the backers who support your campaign.
-              </FormDescription>
+              <FormLabel className="text-base">Donor wall</FormLabel>
+              <p className="text-sm text-muted-foreground">
+                Show a public list of people who supported your campaign.
+              </p>
             </div>
             <FormControl>
-              <Switch
-                checked={field.value}
-                onCheckedChange={field.onChange}
-              />
+              <Switch checked={field.value} onCheckedChange={field.onChange} />
             </FormControl>
           </FormItem>
         )}
@@ -362,111 +243,89 @@ export function Step3GoalDeadline() {
   );
 }
 
-/* ------------------------------------------------------------------------- *
- * Step 4 — Bank details
- * ------------------------------------------------------------------------- */
-
-/**
- * Collects disbursement bank details. In edit mode these are intentionally left
- * blank on load (the full account number never returns to the client) — leaving
- * the account number blank keeps existing details untouched.
- */
 export function Step4BankDetails() {
-  const form = useFormContext<CampaignFormValues>();
+  const { control } = useFormContext();
 
   return (
     <div className="space-y-6">
       <FormField
-        control={form.control}
+        control={control}
         name="accountHolderName"
         render={({ field }) => (
           <FormItem>
             <FormLabel>Account holder name</FormLabel>
             <FormControl>
-              <Input placeholder="Full legal name" {...field} />
+              <Input placeholder="John Doe" {...field} />
             </FormControl>
             <FormMessage />
           </FormItem>
         )}
       />
-
       <FormField
-        control={form.control}
+        control={control}
         name="bankName"
         render={({ field }) => (
           <FormItem>
             <FormLabel>Bank name</FormLabel>
             <FormControl>
-              <Input placeholder="e.g. First National Bank" {...field} />
+              <Input placeholder="Bank of America" {...field} />
             </FormControl>
             <FormMessage />
           </FormItem>
         )}
       />
-
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <FormField
-          control={form.control}
-          name="accountNumber"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Account number</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="••••••••"
-                  autoComplete="off"
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="routingNumber"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Routing number (optional)</FormLabel>
-              <FormControl>
-                <Input placeholder="9 digits" autoComplete="off" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <FormField
-          control={form.control}
-          name="swiftBic"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>SWIFT / BIC (optional)</FormLabel>
-              <FormControl>
-                <Input placeholder="For international transfers" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="country"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Country</FormLabel>
-              <FormControl>
-                <Input placeholder="e.g. United States" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
+      <FormField
+        control={control}
+        name="accountNumber"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Account number</FormLabel>
+            <FormControl>
+              <Input placeholder="000123456789" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="routingNumber"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Routing number</FormLabel>
+            <FormControl>
+              <Input placeholder="021000021" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="swiftBic"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>SWIFT / BIC</FormLabel>
+            <FormControl>
+              <Input placeholder="BOFAUS3N" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="country"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Country</FormLabel>
+            <FormControl>
+              <Input placeholder="United States" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   );
 }
